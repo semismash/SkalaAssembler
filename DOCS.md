@@ -1,3 +1,5 @@
+> **Status:** There is currently no VM or hardware that runs Skala binaries. This document is the reference for the instruction set and for the binary the assembler produces. PRINT and PRINTC are debugging instructions intended for a future VM. The assembler encodes them, but nothing executes them yet.
+
 # Instruction Types
 
 ## R-instruction
@@ -23,7 +25,7 @@
 ## S-instruction
 - Single Register Operation  
 - OPCODE REG  
-- PUSH, POP, PRINT(VM only), PRINTC(VM only)  
+- PUSH, POP, PRINT (debug, needs a VM), PRINTC (debug, needs a VM)  
 
 ## N-instruction
 - No Operands  
@@ -40,6 +42,18 @@ Opcode - 3 bits for type + 5 bits for instruction (8 bits total)
 - J-type: (opcode 8) (unused 8)          (addr high 8)       (addr low 8)
 - S-type: (opcode 8) (reg  4 | unused 4) (unused 8)          (unused 8)  
 - N-type: (opcode 8) (unused 8)          (unused 8)          (unused 8)  
+
+## Operand placement
+- R-type with three operands (`ADD Rdst Rax Rbx`): dest, src1, src2 in the fields above  
+- R-type with two operands (`SET`, `NOT`, `NEG`, `CMP`): the first operand goes in the dest field, src1 is 0, and the second operand goes in the src2 field  
+- I-type with three operands (`ADD Rdst Rax IMM`): dest, src, imm  
+- I-type with two operands (`SET Rdst IMM`, `CMP Rax IMM`): the first operand goes in the dest field, src is 0, and the immediate fills the last 16 bits  
+- `CMP` has no destination, so its first operand (Rax) is stored in the dest field  
+
+## Addresses and Binary File
+- A label does not take up space. Its value is the byte offset of the next instruction, which is 4 x (number of instructions before it)  
+- Variables are allocated automatically on first use, starting at 0x0100 in steps of 2 bytes  
+- The binary file starts with the 4-byte magic number 0x3CDEC0DE, followed by every instruction as 4 bytes, all big-endian  
 
 # Instruction Opcodes
 
@@ -68,7 +82,7 @@ MUL  Rdst Rax Rbx
 DIV  Rdst Rax Rbx  
 MOD  Rdst Rax Rbx  
 
-## Comparison and Bbranching
+## Comparison and Branching
 CMP  Rax Rbx  
 GOTO @LBL  
 WEQ  @LBL  
@@ -144,23 +158,23 @@ CLR
 - SEND - 010 00001  
 
 ### S-types -
-- PUSH - 011 00000  
-- POP  - 011 00001  
-- PRINT - 011 10000  
-- PRINTC - 011 10001  
+- PUSH - 100 00000  
+- POP  - 100 00001  
+- PRINT - 100 10000  
+- PRINTC - 100 10001  
 
 ## J-instruction
-- WEQ  - 100 00000  
-- WNE  - 100 00001  
-- WGT  - 100 00010  
-- WLT  - 100 00011  
-- WCY  - 100 00100  
-- WOV  - 100 00101  
-- WDZ  - 100 00110  
-- GOTO - 100 01000  
-- CAL  - 100 01001  
+- WEQ  - 011 00000  
+- WNE  - 011 00001  
+- WGT  - 011 00010  
+- WLT  - 011 00011  
+- WCY  - 011 00100  
+- WOV  - 011 00101  
+- WDZ  - 011 00110  
+- GOTO - 011 01000  
+- CAL  - 011 01001  
 
 ## N-instruction
 - RET - 101 00000  
 - END - 101 11111  
-- CLR - 101 10000  
+- CLR - 101 10000

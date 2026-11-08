@@ -100,7 +100,7 @@ g++ -g -std=c++23 src/*.cpp src/assembler/*.cpp -I C:/src/vcpkg/vcpkg/installed/
 
 20. WEQ - `WEQ @LBL`  
 - Conditionally jumps to label @LBL when the Z flag is set to 1  
-
+	
 21. WNE - `WNE @LBL`
 - Conditionally jumps to label @LBL when the Z flag is set to 0  
 
