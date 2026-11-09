@@ -256,7 +256,7 @@ namespace codegen_mod {
                 encoded_inst = encode_N(enc_opcode);
                 break;
             case InstType::LBL:
-                break;
+                return;
             default:
                 panic::panic();
                 break;

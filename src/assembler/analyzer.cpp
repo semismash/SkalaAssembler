@@ -87,7 +87,7 @@ namespace analyzer_mod {
         bool label_too_long {false};
         if (inst.used_size > 1) label_too_long = true;
         if (!first_token.has_value()) { //check if first token exists, should not happen ideally but still
-            return std::unexpected(Error(SemErr::MissingOpCodeError, first_token->file_line, first_token->file_col));
+            return std::unexpected(Error(SemErr::MissingOpCodeError, 0, 0));
         } else {
             switch (first_token->token_type) {
                 case TT::OpCode:
@@ -182,7 +182,8 @@ namespace analyzer_mod {
                 const auto& cur_target = (opc_pattern->second)[tkn-1];
 
                 if (cur_token.has_value() != cur_target.has_value()) { // one is null and the other is not
-                    return std::unexpected(Error(SemErr::IncorrectOperandFmt, cur_token->file_line, cur_token->file_col));
+                    const auto& at = cur_token.has_value() ? cur_token.value() : inst.token_arr[0].value();
+                    return std::unexpected(Error(SemErr::IncorrectOperandFmt, at.file_line, at.file_col));
                 } else if (cur_token.has_value()) {
                     if (!cur_target->token_type_exists(cur_token->token_type)) {
                         return std::unexpected(Error(SemErr::IncorrectOperandFmt, cur_token->file_line, cur_token->file_col));
@@ -209,7 +210,7 @@ namespace analyzer_mod {
     std::expected<void, Error> Analyzer::analyze(instruction_mod::Inst& inst, const std::unordered_map<std::string, size_t>& label_table) const {
         const auto& first_token = inst.token_arr[0];
         if (!first_token.has_value()) { //check if first token exists, should not happen ideally but still
-            return std::unexpected(Error(SemErr::MissingOpCodeError, first_token->file_line, first_token->file_col));
+            return std::unexpected(Error(SemErr::MissingOpCodeError, 0, 0));
         } else {
             switch(first_token->token_type) {   
                 case TT::OpCode: {

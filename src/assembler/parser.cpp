@@ -353,6 +353,7 @@ namespace parser_mod {
             
             switch (prev_state) {
                 case State::Idn:
+                case State::Rgt:
                     {
                         auto res = instruction_mod::instruction_map.find(buffer);
                         if (res != instruction_mod::instruction_map.end()) {
@@ -396,8 +397,7 @@ namespace parser_mod {
                         const char* end_char = buffer.data() + buffer.size();
 
                         int val = 0;
-                        auto [ptr, errc] = std::from_chars(start_char, end_char, val);
-
+                        auto [ptr, errc] = std::from_chars(start_char, end_char, val, 16);
                         if (errc == std::errc::invalid_argument || ptr != end_char) { //shouldn't happen ideally
                             token = instruction_mod::Token(instruction_mod::TokenType::Invalid, 0, line_count, tkn_start_char_col);
                         } else if (errc == std::errc::result_out_of_range) { //too big to parse

@@ -1,0 +1,12 @@
+; variables are allocated on first use; hex addresses are explicit
+	SET R0 #1
+	SEND R0 alpha
+	SEND R0 beta
+	SEND R0 alpha
+	LOAD R1 beta
+	LOAD R2 my_var2
+	LOAD R3 0x0100
+	SEND R3 0xFFFF
+	LOAD R4 0x0000
+	SEND R4 0x00ab
+	END

@@ -45,3 +45,6 @@
 
 #.vscode directory
 /.vscode/
+
+# project
+local/

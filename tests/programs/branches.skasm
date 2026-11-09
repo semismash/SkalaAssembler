@@ -1,0 +1,18 @@
+; every conditional jump, forward and backward
+@START
+	CMP R0 R1
+	WEQ @A
+	WNE @B
+@A
+	WGT @START
+	WLT @B
+	WCY @C
+@B
+	WOV @C
+	WDZ @START
+@C
+	CAL @START
+	GOTO @START
+	GOTO @END
+@END
+	END

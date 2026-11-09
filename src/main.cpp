@@ -15,6 +15,7 @@ int main(int argc, char* argv[]) {
     std::string filename = std::string(assembler_mod::prog_name) + ".skasm";
     fs::path filepath = source_dir.parent_path() / "progs" / filename;
 
+    int exit_code = 0; // 0 = ok, 1 = the program has errors, 2 = input file not found
     std::ifstream asm_prog(filepath);
     
     if (asm_prog) {
@@ -27,16 +28,18 @@ int main(int argc, char* argv[]) {
         std::vector<instruction_mod::Inst> inst_pipeline{};
         
         assembler.assemble_prog(inst_pipeline, buffer.str());
+        if (assembler.has_errors()) exit_code = 1; // report errors through the exit code
         assembler.dbg_display_tokens(inst_pipeline);
         assembler.dbg_display_labels();
         
     } else {
         std::cout << "Error: File not found!" << std::endl;
         std::cout << "Path searched: " << fs::absolute(filepath) << std::endl;
+        exit_code = 2; // input file not found
     }
 
     std::cout << "Press any key to exit..." << std::endl;
     std::cin.get();
 
-    return 0;
+    return exit_code;   // return exit code now
 }

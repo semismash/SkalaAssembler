@@ -1,0 +1,11 @@
+; labels on consecutive lines, label at the end, underscores and digits in names
+@first
+@second_label
+	SET R0 #1
+@loop_2
+	ADD R0 R0 #1
+	GOTO @loop_2
+	GOTO @first
+	GOTO @second_label
+	GOTO @last
+@last

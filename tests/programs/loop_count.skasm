@@ -1,0 +1,12 @@
+; count from 0 up to 10, storing each value
+	SET R0 #0		; counter
+	SET R1 #10		; limit
+@LOOP
+	SEND R0 total
+	ADD R0 R0 #1
+	CMP R0 R1
+	WLT @LOOP
+	WEQ @DONE
+	GOTO @LOOP
+@DONE
+	END

@@ -177,4 +177,4 @@ CLR
 ## N-instruction
 - RET - 101 00000  
 - END - 101 11111  
-- CLR - 101 10000
+- CLR - 101 10000  

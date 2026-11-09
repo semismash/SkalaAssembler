@@ -1,0 +1,14 @@
+; subroutine call with the stack
+	SET R0 #6
+	PUSH R0
+	CAL @DOUBLE
+	POP R1
+	PRINT R1
+	END
+
+@DOUBLE
+	PUSH R2
+	ADD R2 R0 R0
+	SEND R2 result
+	POP R2
+	RET

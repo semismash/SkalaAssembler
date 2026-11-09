@@ -31,6 +31,7 @@ namespace assembler_mod {
             std::unordered_map<std::string, size_t> label_table;
 
             Assembler();
+            bool has_errors() const { return error_detected; }
             void assemble_prog(instruction_mod::Pipeline& pipeline, const std::string& file);
             void dbg_display_tokens(const instruction_mod::Pipeline& pipeline) const;
             void dbg_display_labels() const;

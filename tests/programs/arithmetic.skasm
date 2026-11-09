@@ -1,0 +1,18 @@
+; every arithmetic form, with register and immediate operands
+SET R0 #100
+SET R1 #7
+ADD R2 R0 R1
+ADD R2 R2 #1
+SUB R3 R0 R1
+SUB R3 R3 #2
+MUL R4 R0 R1
+MUL R4 R4 #3
+DIV R5 R0 R1
+DIV R5 R5 #2
+MOD R6 R0 R1
+MOD R6 R6 #4
+NEG R7 R1
+NEG R7 #9
+CMP R0 R1
+CMP R0 #100
+END

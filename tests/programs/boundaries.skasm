@@ -1,0 +1,10 @@
+; largest and smallest legal values
+	SET R0 #0
+	SET R15 #65535
+	ADD R15 R15 R0
+	LOAD R0 0x0000
+	SEND R15 0xFFFF
+	PUSH R0
+	POP R15
+	PRINTC R15
+	END
