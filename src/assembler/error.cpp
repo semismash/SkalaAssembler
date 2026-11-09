@@ -6,26 +6,44 @@ using namespace error;
 std::string_view Error::fmt_error_as_str() {
 
     return std::visit(overload{
-        [](ParsingError PErr){
-            switch (PErr) {
-                case ParsingError::ImmediateValueError:
+        [](LexError LErr){
+            switch (LErr) {
+                case LexError::ImmediateValueError:
                     return "Operand is not a correct immediate value";
-                case ParsingError::IdentifierNamingError:
+                case LexError::IdentifierNamingError:
                     return "Identifier is not named correctly";
-                case ParsingError::LabelNamingError:
+                case LexError::LabelNamingError:
                     return "Incorrect syntax for naming label";
-                case ParsingError::AddressNamingError:
+                case LexError::AddressNamingError:
                     return "Incorrect syntax for naming address label";
-                case ParsingError::UnknownCharError:
+                case LexError::UnknownCharError:
                     return "Unknown character, cannot be parsed";
-                case ParsingError::RegisterOutOfRange:
+                case LexError::RegisterOutOfRange:
                     return "Requested register number is too large";
-                case ParsingError::ImmediateValueTooBig:
+                case LexError::ImmediateValueTooBig:
                     return "Immediate value is too large to be parsed";
-                case ParsingError::AddressOutOfRange:
+                case LexError::AddressOutOfRange:
                     return "Address value is too large to be parsed";
-                case ParsingError::InstructionTooLong:
+                default:
+                    return "Error message for this type has not been implemented";
+            }
+        },
+        [](ParseError PErr){
+            switch (PErr) {
+                case ParseError::InstructionTooLong:
                     return "Input instruction has too many operands";
+                default:
+                    return "Error message for this type has not been implemented";
+            }
+        },
+        [](ClassifyError CErr){
+            switch (CErr) {
+                case ClassifyError::MissingOpCodeError:
+                    return "Missing OpCode in Instruction";
+                case ClassifyError::LabelAlreadyExists:
+                    return "Specified Label has already been defined";
+                case ClassifyError::LabelTooLongError:
+                    return "Specified Label should not have extra operands";
                 default:
                     return "Error message for this type has not been implemented";
             }
@@ -46,10 +64,6 @@ std::string_view Error::fmt_error_as_str() {
                     return "Immediate value in instruction is out of range";
                 case SemanticError::AddressOutOfRange:
                     return "Memory address in instruction is out of range";
-                case SemanticError::LabelAlreadyExists:
-                    return "Specified Label has already been defined";
-                case SemanticError::LabelTooLongError:
-                    return "Specified Label should not have extra operards";
                 case SemanticError::UndefinedLabelError:
                     return "Specified Label has not yet been defined, but is used";
                 case SemanticError::UnknownSemanticError:
@@ -57,7 +71,33 @@ std::string_view Error::fmt_error_as_str() {
                 default:
                     return "Error message for this type has not been implemented";
             }
+        },
+        [](CodeGenError GErr){
+            switch (GErr) {
+                case CodeGenError::OutputFileError:
+                    return "could not open output file";
+                default:
+                    return "Error message for this type has not been implemented";
+            }
         }
     }, this->error);
 
+}
+
+void ErrorLog::log(Error err) {
+    errors.push_back(std::move(err));
+}
+
+bool ErrorLog::has_errors() const {
+    return !errors.empty();
+}
+
+void ErrorLog::display(std::ostream& out) {
+    out << "Errors found: \n";
+    for (auto& err : errors) {
+        out <<
+        "Line: " << err.err_line <<
+        ", Column: " << err.err_col <<
+        ": " << err.fmt_error_as_str() << "\n";
+    }
 }

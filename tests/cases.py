@@ -83,6 +83,11 @@ ERROR_CASES = [
     ("unknown_mnemonic",     "FOO R1",                   [(1, 1, "first_token")], True),
     ("several_errors",       "ADD R16 R1 R2\nSET R1 #5\nGOTO @x\nSET R1 #65536",
                              [(1, 5, "reg_range"), (3, 6, "undefined_label"), (4, 8, "imm_range")], True),
+    ("too_many_then_bad_char", "ADD R1 R2 R3 R4 $",      [(1, (14, 16), "too_long")], True),          # the fifth token is noticed first: one error
+    ("bad_char_before_fifth",  "ADD R1 R2 R3 $ R4",      [(1, (14, 15), "unknown_char")], True),      # the bad character comes first: one error
+    ("too_many_comment",       "ADD R1 R2 R3 R4 ; note", [(1, (14, 16), "too_long")], True),          # a comment right after the fifth token
+    ("label_twice_and_bad",    "@a\n@a\nSET R1 #99999999999999\n@b",
+                               [(2, 1, "dup_label"), (3, (8, 23), "imm_range")], False),               # a lexical error is logged before the classifier runs
     ("parse_and_semantic",   "SET R1 ,\nGOTO @x\nSET R1 #5\nADD R16 R1 R2",
                              [(1, 8, "unknown_char"), (2, 6, "undefined_label"), (4, 5, "reg_range")], False),
 ]

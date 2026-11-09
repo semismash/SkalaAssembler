@@ -1,10 +1,18 @@
 # Skala assembler tests
 
-Python standard library only. Put this folder in the Skala repository root (as `tests/`) and run:
+Python standard library only. Put this folder in the Skala repository root (as `tests/`) and run (skala-v1.1 and later take command-line arguments, so use `--cli`):
 
 ```
 python tests/run_tests.py --exe main.exe          # Windows
 python tests/run_tests.py --exe ./main             # Linux
+```
+
+For the assembler with command-line arguments (skala-v1.1), add `--cli`. The runner then calls
+`main <input> -o <output>` in a temporary folder, so there is no `progs` folder, no `prog_name` and no
+hardcoded path involved, and the `cli/` tests run too:
+
+```
+python tests/run_tests.py --exe main.exe --cli
 ```
 
 Useful options: `--only 'known/*'` (one group), `--fuzz 1000 --seed 7` (more fuzzing), `-v` (list passing
@@ -34,6 +42,7 @@ assembler did not process it. The usual causes are:
 | `exit/` | exit code 0 for valid programs, 1 for invalid ones | fixed |
 | `lineend/` | CRLF, missing final newline, trailing spaces and tabs give identical output | the plain file's own output |
 | `fuzz/` | random token-level mutations compared with the reference: no crash, same accept or reject decision, same binary, sane error positions | `skala_ref.py` |
+| `cli/` | (`--cli` only) usage errors, `-o`, the default output name, unwritable output, no key-press wait | fixed expectations |
 | `golden/` | output of every test program compared with the saved snapshot in `golden/` | recorded from the build before any fix |
 
 A golden snapshot records what the code does, not what is correct. It only tells you that something changed.

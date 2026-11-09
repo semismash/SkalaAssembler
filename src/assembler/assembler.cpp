@@ -4,62 +4,22 @@
 using namespace assembler_mod;
 
 Assembler::Assembler() :
-    instruction_pipeline{},
-    error_detected{false},
     error_log{},
-    label_table{}
+    output_path{},
+    symbols{}
 { }
 
 void Assembler::assemble_prog(instruction_mod::Pipeline& pipeline, const std::string& file) {
-    auto parser = parser_mod::Parser();
-    for (int pos{0}; pos < file.size(); ++pos) {
-        auto parse_success = parser.parse(pipeline, file[pos]);
-        if (!parse_success) { if (!error_detected) error_detected = true; log_error(parse_success.error()); };
-        //debugging purpose only
-        /*std::cout << magic_enum::enum_name(parser.cur_state) 
-        << ", Ln: " << parser.line_count 
-        << ", Cm: " << parser.col_count << std::endl;*/
-    }
-    { auto parse_success = parser.parse(pipeline, '\n'); //add \n sentinel
-        if (!parse_success) {
-            if (!error_detected) error_detected = true; 
-            log_error(parse_success.error());
-        }
-    } 
+
+    parse_source(pipeline, file);
 
     if (!pipeline.empty()) {
-        auto analyzer = analyzer_mod::Analyzer();
-        for (int inst_no{0}; inst_no < pipeline.size(); ++inst_no) {
-            auto scout_success = analyzer.scout_lbl(pipeline[inst_no], label_table);
-            if (!scout_success) { if (!error_detected) error_detected = true; log_error(scout_success.error()); };
-        } 
-        for (int inst_no{0}; inst_no < pipeline.size(); ++inst_no) {
-            auto analyze_success = analyzer.analyze(pipeline[inst_no], label_table);
-            //std::cout << inst_no + 1 << ": ";
-            if (!analyze_success) { //debug
-                if (!error_detected) error_detected = true; 
-                log_error(analyze_success.error()); 
-                //std::cout << "INVALID\n";
-            } else {
-                //std::cout << "VALID\n";
-            };
-            analyzer.RI_inst_classify(pipeline[inst_no]);
-        }
+        classify(pipeline); //every instruction is classified before any is analyzed, so labels can be used before they are defined
+        analyze(pipeline);
     }
 
-    if (!error_detected) { //only do codegen if no errors are detected
-        std::cout << "Errors not detected. Code generation started.\n";
-        auto codegen = codegen_mod::CodeGen();
-        fs::path source_dir = fs::path(__FILE__).parent_path().parent_path().parent_path();
-        std::string filename = std::string(assembler_mod::prog_name) + ".bin";
-        fs::path filepath = source_dir / "progs" / filename;
-        //std::cout << filepath << std::endl;
-        std::ofstream output(filepath, std::ios::binary);
-        codegen.write_magic(output, MAGIC_NUM);
-        for (const auto& inst : pipeline) {
-            codegen.generate(output, inst, label_table);
-        }
-        std::cout << "Code generation successfully completed.\n";
+    if (!has_errors()) { //only do codegen if no errors are detected
+        generate(pipeline);
     } else {
         std::cout << "Errors detected. Code generation did not start.\n";
         display_errors();
@@ -67,19 +27,64 @@ void Assembler::assemble_prog(instruction_mod::Pipeline& pipeline, const std::st
 
 }
 
+void Assembler::parse_source(instruction_mod::Pipeline& pipeline, const std::string& file) {
+    auto parser = parser_mod::Parser();
+    parser.parse_source(file, pipeline, error_log);
+}
+
+void Assembler::classify(instruction_mod::Pipeline& pipeline) {
+    auto classifier = classifier_mod::Classifier();
+    for (auto& inst : pipeline) {
+        auto classify_success = classifier.classify(inst, symbols);
+        if (!classify_success) error_log.log(classify_success.error());
+    }
+}
+
+void Assembler::analyze(const instruction_mod::Pipeline& pipeline) {
+    auto analyzer = analyzer_mod::Analyzer();
+    for (const auto& inst : pipeline) {
+        auto analyze_success = analyzer.analyze(inst, symbols);
+        if (!analyze_success) error_log.log(analyze_success.error());
+    }
+}
+
+void Assembler::generate(const instruction_mod::Pipeline& pipeline) {
+    std::cout << "Errors not detected. Code generation started.\n";
+    layout_mod::Layout().run(pipeline, symbols);
+    auto codegen = codegen_mod::CodeGen(symbols);
+    fs::path source_dir = fs::path(__FILE__).parent_path().parent_path().parent_path();
+    std::string filename = std::string(assembler_mod::prog_name) + ".bin";
+    fs::path filepath = source_dir / "progs" / filename;
+    if (!output_path.empty()) filepath = output_path; // -o replaces the default output location
+    std::ofstream output(filepath, std::ios::binary);
+    if (!output) { // report an output file that cannot be opened, instead of silently writing nothing
+        std::cout << "Error: " << error::Error(error::CodeGenError::OutputFileError, 0, 0).fmt_error_as_str() << " " << filepath << "\n";
+        output_error = true;
+        return;
+    }
+    codegen.write_magic(output, MAGIC_NUM);
+    for (const auto& inst : pipeline) {
+        codegen.generate(output, inst);
+    }
+    std::cout << "Code generation successfully completed.\n";
+}
+
 void Assembler::dbg_display_tokens(const instruction_mod::Pipeline& pipeline) const {
 
-    for (int i{0}; i < pipeline.size(); ++i) {
+    for (size_t i{0}; i < pipeline.size(); ++i) {
         const auto& cur_inst{pipeline[i]};
         std::cout << "Instruction: " << i << "(" << magic_enum::enum_name(cur_inst.inst_type) << ")" << ": ";
-        for (int j{0}; j < cur_inst.INST_SIZE; ++j) {
+        for (size_t j{0}; j < instruction_mod::INST_SIZE; ++j) {
             const auto& cur_token{cur_inst.token_arr[j]};
             if (cur_token.has_value()) {
-                std::cout << magic_enum::enum_name(cur_token->token_type) << " : ";
+                std::cout << instruction_mod::token_type_name(*cur_token) << " : ";
                 std::visit(overload {
-                    [](instruction_mod::OpCode oc) { std::cout << magic_enum::enum_name(oc); }, //for opcode
-                    [](auto a) { std::cout << a ;}, //for int and double
-                }, cur_token->value);
+                    [](const instruction_mod::OpCodeToken& t) { std::cout << magic_enum::enum_name(t.value); }, //for opcode
+                    [](const instruction_mod::LabelToken& t) { std::cout << t.name; },
+                    [](const instruction_mod::VariableToken& t) { std::cout << t.name; },
+                    [](const instruction_mod::InvalidToken&) { std::cout << 0; },
+                    [](const auto& t) { std::cout << t.value; }, //for register, immediate and address
+                }, cur_token->kind);
             } else {
                 std::cout << "No Token";
             }
@@ -92,22 +97,13 @@ void Assembler::dbg_display_tokens(const instruction_mod::Pipeline& pipeline) co
 
 void Assembler::dbg_display_labels() const {
 
-    for (const auto& [key, value] : label_table) {
-        std::cout << key << ": " << value << "\n";
+    for (const auto& name : symbols.label_names()) {
+        const size_t address = symbols.label_address(name).value_or(symbols.label_inst_index(name) * instruction_mod::INST_BYTES);
+        std::cout << name << ": " << address << "\n";
     }
 
-}
-
-void Assembler::log_error(error::Error& err) { //FIX THIS FUNCTION!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    error_log.push_back(std::move(err));
 }
 
 void Assembler::display_errors() {
-    std::cout << "Errors found: \n";
-    for (auto& err : error_log) {
-        std::cout << 
-        "Line: " << err.err_line << 
-        ", Column: " << err.err_col <<
-        ": " << err.fmt_error_as_str() << "\n";
-    }
+    error_log.display(std::cout);
 }

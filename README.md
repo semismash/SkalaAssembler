@@ -27,6 +27,17 @@ g++ -g -std=c++23 src/*.cpp src/assembler/*.cpp -I C:/src/vcpkg/vcpkg/installed/
 ```
 5. Assembled binary will be present in **root/progs**. If the program contains syntactical or semantic errors, the assembler will give a detailed line-by-line list of all related errors present in the program, and the binary will not be generated.  
 
+## Command line (skala-v1.1)
+The assembler can also be told which file to assemble, instead of looking for `progs/demo.skasm`. Nothing waits for a key press in this mode, so it can be used from scripts.  
+```bash
+main.exe input.skasm                 # writes input.bin next to the input file
+main.exe input.skasm -o out.bin      # writes out.bin
+main.exe --help
+```
+- Exit code `0` - assembled, `1` - the program has errors (no binary is written), `2` - bad arguments, input file not found, or output file could not be written  
+- With no arguments, it behaves as described above (reads `progs/demo.skasm` and waits for a key press at the end)  
+- Tests: `python tests/run_tests.py --exe main.exe --cli` (see `tests/README.md`)  
+
 **NOTE: If the program finishes and says there are zero errors but a binary is not generated, or the program panics (*indicated by the message mentioning a unknown error*), please raise an detailed issue on this repository.**  
 
 ## Syntax

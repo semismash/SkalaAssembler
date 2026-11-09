@@ -1,120 +1,120 @@
 #include "instructions.hpp"
 #include "../overload.hpp"
+#include "../panic.hpp"
 
 namespace instruction_mod {
 
-    const std::unordered_map<std::string_view, OpCode> instruction_map {
-        { "LOAD",   OpCode::LOAD },
-        { "SEND",   OpCode::SEND },
-        { "SET",    OpCode::SET },
-        { "NOT",    OpCode::NOT },
-        { "AND",    OpCode::AND },
-        { "OR",     OpCode::OR },
-        { "XOR",    OpCode::XOR },
-        { "STL",    OpCode::STL },
-        { "STR",    OpCode::STR },
-        { "RTL",    OpCode::RTL },
-        { "RTR",    OpCode::RTR },
-        { "ADD",    OpCode::ADD },
-        { "SUB",    OpCode::SUB },
-        { "MUL",    OpCode::MUL },
-        { "DIV",    OpCode::DIV },
-        { "MOD",    OpCode::MOD },
-        { "NEG",    OpCode::NEG },
-        { "CMP",    OpCode::CMP },
-        { "GOTO",   OpCode::GOTO },
-        { "WEQ",    OpCode::WEQ },
-        { "WNE",    OpCode::WNE },
-        { "WGT",    OpCode::WGT },
-        { "WLT",    OpCode::WLT },
-        { "WCY",    OpCode::WCY },
-        { "WOV",    OpCode::WOV },
-        { "WDZ",    OpCode::WDZ },
-        { "CAL",    OpCode::CAL },
-        { "RET",    OpCode::RET },
-        { "PUSH",   OpCode::PUSH },
-        { "POP",    OpCode::POP },
-        { "PRINT",  OpCode::PRINT },
-        { "PRINTC", OpCode::PRINTC },
-        { "END",    OpCode::END },
-        { "CLR",    OpCode::CLR },
+    // single instruction table: add or change an instruction here and nowhere else
+    namespace {
+        constexpr OperandFmt FMT_NULL{ OPR_NONE, OPR_NONE, OPR_NONE };                                        // N
+        constexpr OperandFmt FMT_REG{ OPR_REG, OPR_NONE, OPR_NONE };                                          // S
+        constexpr OperandFmt FMT_REG_ADR{ OPR_REG, OPR_ADR | OPR_VAR, OPR_NONE };                             // M
+        constexpr OperandFmt FMT_REG_RGI{ OPR_REG, OPR_REG | OPR_IMM, OPR_NONE };                             // R/I with two operands
+        constexpr OperandFmt FMT_REG_REG_RGI{ OPR_REG, OPR_REG, OPR_REG | OPR_IMM };                          // R/I with three operands
+        constexpr OperandFmt FMT_LBL{ OPR_LBL, OPR_NONE, OPR_NONE };                                          // J
+    }
+
+    const std::unordered_map<OpCode, InstInfo> instruction_table {
+
+        // memory and registers
+        { OpCode::LOAD,   { "LOAD",   InstType::M, std::nullopt,   0b00000, FMT_REG_ADR } },
+        { OpCode::SEND,   { "SEND",   InstType::M, std::nullopt,   0b00001, FMT_REG_ADR } },
+        { OpCode::SET,    { "SET",    InstType::R, InstType::I,    0b10000, FMT_REG_RGI } },
+
+        // bitwise
+        { OpCode::NOT,    { "NOT",    InstType::R, InstType::I,    0b00000, FMT_REG_RGI } },
+        { OpCode::AND,    { "AND",    InstType::R, InstType::I,    0b00001, FMT_REG_REG_RGI } },
+        { OpCode::OR,     { "OR",     InstType::R, InstType::I,    0b00010, FMT_REG_REG_RGI } },
+        { OpCode::XOR,    { "XOR",    InstType::R, InstType::I,    0b00011, FMT_REG_REG_RGI } },
+
+        // shift and rotation
+        { OpCode::STL,    { "STL",    InstType::R, InstType::I,    0b00100, FMT_REG_REG_RGI } },
+        { OpCode::STR,    { "STR",    InstType::R, InstType::I,    0b00101, FMT_REG_REG_RGI } },
+        { OpCode::RTL,    { "RTL",    InstType::R, InstType::I,    0b00110, FMT_REG_REG_RGI } },
+        { OpCode::RTR,    { "RTR",    InstType::R, InstType::I,    0b00111, FMT_REG_REG_RGI } },
+
+        // arithmetic
+        { OpCode::NEG,    { "NEG",    InstType::R, InstType::I,    0b01011, FMT_REG_RGI } },
+        { OpCode::ADD,    { "ADD",    InstType::R, InstType::I,    0b01000, FMT_REG_REG_RGI } },
+        { OpCode::SUB,    { "SUB",    InstType::R, InstType::I,    0b01001, FMT_REG_REG_RGI } },
+        { OpCode::MUL,    { "MUL",    InstType::R, InstType::I,    0b01100, FMT_REG_REG_RGI } },
+        { OpCode::DIV,    { "DIV",    InstType::R, InstType::I,    0b01110, FMT_REG_REG_RGI } },
+        { OpCode::MOD,    { "MOD",    InstType::R, InstType::I,    0b01111, FMT_REG_REG_RGI } },
+
+        // comparison and branching
+        { OpCode::CMP,    { "CMP",    InstType::R, InstType::I,    0b10001, FMT_REG_RGI } },
+        { OpCode::GOTO,   { "GOTO",   InstType::J, std::nullopt,   0b01000, FMT_LBL } },
+        { OpCode::WEQ,    { "WEQ",    InstType::J, std::nullopt,   0b00000, FMT_LBL } },
+        { OpCode::WNE,    { "WNE",    InstType::J, std::nullopt,   0b00001, FMT_LBL } },
+        { OpCode::WGT,    { "WGT",    InstType::J, std::nullopt,   0b00010, FMT_LBL } },
+        { OpCode::WLT,    { "WLT",    InstType::J, std::nullopt,   0b00011, FMT_LBL } },
+        { OpCode::WCY,    { "WCY",    InstType::J, std::nullopt,   0b00100, FMT_LBL } },
+        { OpCode::WOV,    { "WOV",    InstType::J, std::nullopt,   0b00101, FMT_LBL } },
+        { OpCode::WDZ,    { "WDZ",    InstType::J, std::nullopt,   0b00110, FMT_LBL } },
+
+        // stacks and sub-routines
+        { OpCode::CAL,    { "CAL",    InstType::J, std::nullopt,   0b01001, FMT_LBL } },
+        { OpCode::RET,    { "RET",    InstType::N, std::nullopt,   0b00000, FMT_NULL } },
+        { OpCode::PUSH,   { "PUSH",   InstType::S, std::nullopt,   0b00000, FMT_REG } },
+        { OpCode::POP,    { "POP",    InstType::S, std::nullopt,   0b00001, FMT_REG } },
+
+        // i/o (VM only)
+        { OpCode::PRINT,  { "PRINT",  InstType::S, std::nullopt,   0b10000, FMT_REG } },
+        { OpCode::PRINTC, { "PRINTC", InstType::S, std::nullopt,   0b10001, FMT_REG } },
+
+        // misc. and debugging
+        { OpCode::END,    { "END",    InstType::N, std::nullopt,   0b11111, FMT_NULL } },
+        { OpCode::CLR,    { "CLR",    InstType::N, std::nullopt,   0b10000, FMT_NULL } },
+
     };
 
-    const std::unordered_map<OpCode, InstType> instruction_types {
-        // memory
-        { OpCode::LOAD,   InstType::M  },
-        { OpCode::SEND,   InstType::M  },
+    const InstInfo& instruction_info(OpCode opcode) {
+        auto it = instruction_table.find(opcode);
+        if (it == instruction_table.end()) panic::panic("instruction_info: opcode missing from the instruction table");
+        return it->second;
+    }
 
-        // RI (either R or I, determined by analyzer)
-        { OpCode::SET,    InstType::RI },
-        { OpCode::NOT,    InstType::RI },
-        { OpCode::AND,    InstType::RI },
-        { OpCode::OR,     InstType::RI },
-        { OpCode::XOR,    InstType::RI },
-        { OpCode::STL,    InstType::RI },
-        { OpCode::STR,    InstType::RI },
-        { OpCode::RTL,    InstType::RI },
-        { OpCode::RTR,    InstType::RI },
-        { OpCode::NEG,    InstType::RI },
-        { OpCode::ADD,    InstType::RI },
-        { OpCode::SUB,    InstType::RI },
-        { OpCode::MUL,    InstType::RI },
-        { OpCode::DIV,    InstType::RI },
-        { OpCode::MOD,    InstType::RI },
-        { OpCode::CMP,    InstType::RI },
+    std::optional<OpCode> find_opcode(std::string_view mnemonic) {
+        for (const auto& [opcode, info] : instruction_table) {
+            if (info.mnemonic == mnemonic) return opcode;
+        }
+        return std::nullopt;
+    }
 
-        // jump/branch
-        { OpCode::GOTO,   InstType::J  },
-        { OpCode::WEQ,    InstType::J  },
-        { OpCode::WNE,    InstType::J  },
-        { OpCode::WGT,    InstType::J  },
-        { OpCode::WLT,    InstType::J  },
-        { OpCode::WCY,    InstType::J  },
-        { OpCode::WOV,    InstType::J  },
-        { OpCode::WDZ,    InstType::J  },
-        { OpCode::CAL,    InstType::J  },
+    // tokens: constructors and helpers that say what a token is; replaced TokenType field and TokenOpt confusing ahh shi
+    Token::Token() :
+        kind{InvalidToken{}}, file_line{0}, file_col{0}, file_end_col{0} { }
+    Token::Token(TokenKind kind, size_t f_line, size_t f_col, size_t f_end_col) :
+        kind{std::move(kind)}, file_line{f_line}, file_col{f_col}, file_end_col{f_end_col} { }
 
-        // single register
-        { OpCode::PUSH,   InstType::S  },
-        { OpCode::POP,    InstType::S  },
-        { OpCode::PRINT,  InstType::S  },
-        { OpCode::PRINTC, InstType::S  },
+    std::string_view token_type_name(const Token& token) {
+        return std::visit(overload{
+            [](const OpCodeToken&)    -> std::string_view { return "OpCode"; },
+            [](const RegisterToken&)  -> std::string_view { return "Register"; },
+            [](const ImmediateToken&) -> std::string_view { return "Immediate"; },
+            [](const AddressToken&)   -> std::string_view { return "Address"; },
+            [](const LabelToken&)     -> std::string_view { return "Label"; },
+            [](const VariableToken&)  -> std::string_view { return "Variable"; },
+            [](const InvalidToken&)   -> std::string_view { return "Invalid"; },
+        }, token.kind);
+    }
 
-        // no operands
-        { OpCode::RET,    InstType::N  },
-        { OpCode::END,    InstType::N  },
-        { OpCode::CLR,    InstType::N  },
-    };
-
-    Token::Token() : 
-        token_type{TokenType::Invalid}, value{0}, file_line{0}, file_col{0} { }
-    Token::Token(TokenType type, OpCode val, size_t f_line, size_t f_col) :
-        token_type{type}, value{val}, file_line{f_line}, file_col{f_col} { }
-    Token::Token(TokenType type, int val, size_t f_line, size_t f_col) :
-        token_type{type}, value{val}, file_line{f_line}, file_col{f_col} { }
-    Token::Token(TokenType type, std::string val, size_t f_line, size_t f_col) :
-        token_type{type}, value{val}, file_line{f_line}, file_col{f_col} { }
-
-    TokenOpt::TokenOpt(TokenType token) :
-        token_opt_list(std::move(token))
-    { }
-
-    TokenOpt::TokenOpt(std::initializer_list<TokenType> tokens) :
-        token_opt_list(std::unordered_set<TokenType>(tokens))
-    { }
-
-    bool TokenOpt::token_type_exists(TokenType target) const {
-        return std::visit(overload {
-            [target](TokenType token) { return token == target; },
-            [target](const std::unordered_set<TokenType>& tokens) { return tokens.contains(target); },
-        }, token_opt_list);
+    OperandMask operand_kind(const Token& token) {
+        return std::visit(overload{
+            [](const RegisterToken&)  { return OPR_REG; },
+            [](const ImmediateToken&) { return OPR_IMM; },
+            [](const AddressToken&)   { return OPR_ADR; },
+            [](const LabelToken&)     { return OPR_LBL; },
+            [](const VariableToken&)  { return OPR_VAR; },
+            [](const auto&)           { return OPR_NONE; }, //opcodes and invalid tokens are not operands
+        }, token.kind);
     }
 
     Inst::Inst() :
-        token_arr{std::nullopt},
         used_size{0},
+        inst_type{InstType::INV},
         inst_no{std::nullopt},
-        inst_type{InstType::INV}
+        token_arr{std::nullopt}
     { }
 
     bool Inst::push_token(Token&& token) {

@@ -1,477 +1,50 @@
 #include "parser.hpp"
-#include "../overload.hpp"
-#include "../panic.hpp"
-#include <magic_enum/magic_enum.hpp>
-
-#include <iostream>
 
 namespace parser_mod {
 
-    const std::unordered_map<State, StateType> state_map {
-        { State::Idn, StateType::Word },
-        { State::Reg, StateType::Word },
-        { State::Imm, StateType::Word },
-        { State::Lbl, StateType::Word },
-        { State::Adr, StateType::Word },
-        { State::Rgt, StateType::RTransition },
-        { State::Imt, StateType::Transition },
-        { State::Lbt, StateType::Transition },
-        { State::Adt, StateType::Transition },
-        { State::Zer, StateType::ZTransition },
-        { State::Cmt, StateType::None },
-        { State::Nil, StateType::None },
-        { State::Err, StateType::None },
-    };
-
     Parser::Parser() :
-        cur_state{State::Nil},
-        prev_state{State::Nil},
-        cur_action{Action::Idle},
-        buffer{""},
-        inst_count{0},
-        cur_inst(),
-        cur_ch{0},
-        line_count{1},
-        col_count{1},
-        tkn_start_char_col{0}
+        lexer()
     { }
 
-    std::expected<void, Error> Parser::set_state() {
-
-
-        if (cur_ch == ';') {
-
-            cur_state = State::Cmt;
-            
-        } else if (cur_state == State::Zer && cur_ch == 'x') { //0x detection
-
-            cur_state = State::Adt;
-
-        } else if (std::isspace(cur_ch)) { //simple state machine lmao
-
-            switch (cur_state) {
-                case State::Idn:
-                case State::Reg:
-                case State::Rgt: // despite being a transition state, this is allowed since R is alphanumeric
-                case State::Imm:
-                case State::Lbl:
-                case State::Adr:
-                case State::Nil:
-                    cur_state = State::Nil;
-                    break;
-                case State::Imt:
-                case State::Zer:
-                    return parse_error(ParseErr::ImmediateValueError);
-                    break;
-                case State::Lbt:
-                    return parse_error(ParseErr::LabelNamingError);
-                    break;
-                case State::Adt:
-                    return parse_error(ParseErr::AddressNamingError);
-                    break;
-                case State::Err:
-                    break;
-                case State::Cmt:
-                    panic::panic();
-
+    void Parser::parse_source(const std::string& source, instruction_mod::Pipeline& pipeline, error::ErrorLog& error_log) {
+        const std::string_view text{source};
+        size_t line_no{1};
+        size_t start{0};
+        while (true) {
+            const size_t end = text.find('\n', start);
+            if (end == std::string_view::npos) { //the last line, it does not need to end with a newline
+                parse_line(text.substr(start), line_no, pipeline, error_log);
+                break;
             }
-
-        } else if (cur_ch == 'R') {
-
-            switch (cur_state) {
-                case State::Nil:
-                    cur_state = State::Rgt;
-                    break;
-                case State::Rgt:
-                case State::Reg:
-                    cur_state = State::Idn;
-                    break;
-                case State::Adt:
-                case State::Adr:
-                    return parse_error(ParseErr::AddressNamingError);
-                    break;
-                case State::Imt:
-                case State::Imm:
-                    return parse_error(ParseErr::ImmediateValueError);
-                    break;
-                case State::Lbt:
-                case State::Lbl:
-                    cur_state = State::Lbl;
-                    break;
-                case State::Zer:
-                    return parse_error(ParseErr::IdentifierNamingError);
-                    break;
-                case State::Err:
-                    break;
-                case State::Cmt:
-                    panic::panic();
-                default:
-                    break;
-            }
-
-        } else if (cur_ch == '@') {
-            
-            switch (cur_state) {
-                case State::Idn:
-                case State::Rgt:
-                case State::Reg:
-                case State::Zer:
-                    return parse_error(ParseErr::IdentifierNamingError);
-                    break;
-                case State::Imt:
-                case State::Imm:
-                    return parse_error(ParseErr::ImmediateValueError);
-                    break;
-                case State::Lbl:
-                case State::Lbt:
-                    return parse_error(ParseErr::LabelNamingError);
-                    break;
-                case State::Adt:
-                case State::Adr:
-                    return parse_error(ParseErr::AddressNamingError);
-                    break;
-                case State::Nil:
-                    cur_state = State::Lbt;
-                    break;
-                case State::Err:
-                    break;
-                case State::Cmt:
-                    panic::panic();
-            }
-
-        } else if (cur_ch == '#') {
-
-            switch (cur_state) {
-                case State::Idn:
-                case State::Rgt:
-                case State::Reg:
-                case State::Zer:
-                    return parse_error(ParseErr::IdentifierNamingError);
-                    break;
-                case State::Imt:
-                case State::Imm:
-                    return parse_error(ParseErr::ImmediateValueError);
-                    break;
-                case State::Lbl:
-                case State::Lbt:
-                    return parse_error(ParseErr::LabelNamingError);
-                    break;
-                case State::Adt:
-                case State::Adr:
-                    return parse_error(ParseErr::AddressNamingError);
-                    break;
-                case State::Nil:
-                    cur_state = State::Imt;
-                    break;
-                case State::Err:
-                    break;
-                case State::Cmt:
-                    panic::panic();
-            }
-
-        } else if (cur_ch == '_') {
-
-            switch (cur_state) {
-                case State::Idn:
-                case State::Rgt:
-                case State::Reg:
-                case State::Nil:
-                    cur_state = State::Idn;
-                    break;
-                case State::Zer:
-                    return parse_error(ParseErr::IdentifierNamingError);
-                    break;
-                case State::Imt:
-                case State::Imm:
-                    return parse_error(ParseErr::ImmediateValueError);
-                    break;
-                case State::Lbl:
-                case State::Lbt:
-                    cur_state = State::Lbl;
-                    break;
-                case State::Adt:
-                case State::Adr:
-                    return parse_error(ParseErr::AddressNamingError);
-                    break;
-                case State::Err:
-                    break;
-                case State::Cmt:
-                    panic::panic();
-            }
-            
-        } else if (std::isdigit(cur_ch)) {
-
-            switch (cur_state) {
-                case State::Idn:
-                    cur_state = State::Idn;
-                    break;
-                case State::Rgt:
-                case State::Reg:
-                    cur_state = State::Reg;
-                    break;
-                case State::Nil:
-                    if (cur_ch == '0') { //if its zero, set to zer to transition to address, else raise error
-                        cur_state = State::Zer;
-                    } else {
-                        return parse_error(ParseErr::IdentifierNamingError);
-                    }
-                    break;
-                case State::Imt:
-                case State::Imm:
-                    cur_state = State::Imm;
-                    break;
-                case State::Lbt:
-                case State::Lbl:
-                    cur_state = State::Lbl;
-                    break;
-                case State::Zer:
-                    return parse_error(ParseErr::ImmediateValueError);
-                    break;
-                case State::Adt:
-                case State::Adr:
-                    cur_state = State::Adr;
-                    break;
-                case State::Err:
-                    break;
-                case State::Cmt:
-                    panic::panic();
-            }
-
-        } else if (std::isalpha(cur_ch)) {
-
-            switch (cur_state) {
-                case State::Idn:
-                case State::Rgt:
-                case State::Reg:
-                case State::Nil:
-                    cur_state = State::Idn;
-                    break;
-                case State::Imm:
-                case State::Imt:
-                    return parse_error(ParseErr::ImmediateValueError);
-                    break;
-                case State::Lbt:
-                case State::Lbl:
-                    cur_state = State::Lbl;
-                    break;
-                case State::Zer:
-                    return parse_error(ParseErr::IdentifierNamingError);
-                    break;
-                case State::Adt:
-                case State::Adr:
-                    if ((cur_ch >= 'A' && cur_ch <= 'F') || (cur_ch >= 'a' && cur_ch <= 'f')) { //if between A-F or a-f
-                        cur_state = State::Adr;
-                    } else {
-                        return parse_error(ParseErr::AddressNamingError);
-                    }
-                    break;
-                case State::Err:
-                    break;
-                case State::Cmt:
-                    panic::panic();
-                
-            }
-
-        } else {
-
-            cur_state = State::Err;
-            return parse_error(ParseErr::UnknownCharError);
-
+            parse_line(text.substr(start, end - start), line_no, pipeline, error_log);
+            start = end + 1;
+            ++line_no;
         }
-
-        return {};
-
     }
 
-    std::expected<void, Error> Parser::set_action() {
+    void Parser::parse_line(std::string_view line, size_t line_no, instruction_mod::Pipeline& pipeline, error::ErrorLog& error_log) {
 
-        switch ( state_map.at(prev_state) ) {
+        auto lexed = lexer.lex_line(line, line_no);
 
-            case StateType::Word:
-            case StateType::RTransition:
-                switch ( state_map.at(cur_state) ) {
-                    case StateType::Word:
-                        cur_action = Action::Push;
-                        break;
-                    case StateType::None:
-                        cur_action = Action::Emit;
-                        break;
-                    default: // default, anyways handled by error
-                        cur_action = Action::Idle;
-                        break;
-                }
-                break;
-
-            case StateType::ZTransition:
-                switch ( state_map.at(cur_state) ) { 
-                    case StateType::Transition:
-                        cur_action = Action::Push;
-                        break;
-                    default:
-                        cur_action = Action::Idle;
-                        break;
-                }
-                break;
-
-            case StateType::Transition:
-                switch ( state_map.at(cur_state) ) {
-                    case StateType::Word:
-                        cur_action = Action::Push;
-                        break;
-                    default:
-                        cur_action = Action::Idle; // anyways handled by error
-                        break;
-                }
-                break;
-            case StateType::None:
-                tkn_start_char_col = col_count;
-                switch ( state_map.at(cur_state) ) {
-                    case StateType::None:
-                        cur_action = Action::Idle;
-                        break;
-                    default:
-                        cur_action = Action::Push;
-                        break;
-                }
-                break;
-        }
-
-        return {};
-
-    }
-
-    std::expected<void, Error> Parser::execute(instruction_mod::Pipeline& pipeline) {
-            
-        instruction_mod::Token token;
-        switch (cur_action) {
-
-        case Action::Push:
-            buffer.push_back(cur_ch);
-            break;
-        
-        case Action::Emit:
-            
-            switch (prev_state) {
-                case State::Idn:
-                case State::Rgt:
-                    {
-                        auto res = instruction_mod::instruction_map.find(buffer);
-                        if (res != instruction_mod::instruction_map.end()) {
-                            token = instruction_mod::Token(instruction_mod::TokenType::OpCode, res->second, line_count, tkn_start_char_col);
-                        } else {
-                            token = instruction_mod::Token(instruction_mod::TokenType::Variable, buffer, line_count, tkn_start_char_col);
-                        }
-                    }
-                    break;
-                case State::Reg:
-                case State::Imm:
-                    {
-                        const char* start_char = buffer.data() + 1; //skip first character R or #
-                        const char* end_char = buffer.data() + buffer.size();
-
-                        int val = 0;
-                        auto [ptr, errc] = std::from_chars(start_char, end_char, val);
-                        
-                        if (errc == std::errc::invalid_argument || ptr != end_char) { //shouldnt happen ideally
-                            token = instruction_mod::Token(instruction_mod::TokenType::Invalid, 0, line_count, tkn_start_char_col);
-                        } else if (errc == std::errc::result_out_of_range) { //value is too big to parse
-                            switch (prev_state) {
-                                case State::Reg: return parse_error(ParseErr::RegisterOutOfRange); break;
-                                case State::Imm: return parse_error(ParseErr::ImmediateValueTooBig); break;
-                            }
-                        } else { //success
-                            switch (prev_state) {
-                                case State::Reg: 
-                                    token = instruction_mod::Token(instruction_mod::TokenType::Register, val, line_count, tkn_start_char_col); 
-                                    break; //account for error handling
-                                case State::Imm: 
-                                    token = instruction_mod::Token(instruction_mod::TokenType::Immediate, val, line_count, tkn_start_char_col); 
-                                    break;
-                            }
-                        }
-                    }
-                    break;
-                case State::Adr:
-                    {
-                        const char* start_char = buffer.data() + 2; //skip first two characters, 0x
-                        const char* end_char = buffer.data() + buffer.size();
-
-                        int val = 0;
-                        auto [ptr, errc] = std::from_chars(start_char, end_char, val, 16);
-                        if (errc == std::errc::invalid_argument || ptr != end_char) { //shouldn't happen ideally
-                            token = instruction_mod::Token(instruction_mod::TokenType::Invalid, 0, line_count, tkn_start_char_col);
-                        } else if (errc == std::errc::result_out_of_range) { //too big to parse
-                            return parse_error(ParseErr::AddressOutOfRange);
-                        } else { //success
-                            token = instruction_mod::Token(instruction_mod::TokenType::Address, val, line_count, tkn_start_char_col);
-                        }
-                    }
-
-                    break;
-                case State::Lbl:
-                    {
-                        token = instruction_mod::Token(instruction_mod::TokenType::Label, buffer.substr(1), line_count, tkn_start_char_col);
-                    } 
-                    break;
-                default:
-                    {
-                        panic::panic();
-                    }
-            }
-            
-            if (!cur_inst.push_token(std::move(token))) return parse_error(ParseErr::InstructionTooLong); //move happens here 
-            buffer.clear();
-            break;
-
-        case Action::Idle: 
-            break;
-
-        }
-
-        return {};
-
-    }
-
-    std::expected<void, Error> Parser::parse(instruction_mod::Pipeline& pipeline, char current_char) {
-
-        cur_ch = current_char;
-        std::optional<Error> pending_error = std::nullopt;
-
-        if (cur_state != State::Err && cur_state != State::Cmt) {
-            auto result = set_state()
-                .and_then([this]() { return set_action(); })
-                .and_then([this, &pipeline]() { return execute(pipeline); });
-
-            if (!result) {
-                cur_state = State::Err;
-                buffer.clear();
-                pending_error = result.error();
+        instruction_mod::Inst inst;
+        for (auto& token : lexed.tokens) {
+            const size_t end_col = token.file_end_col; //read before the token is moved
+            if (!inst.push_token(std::move(token))) {
+                //a fifth token. This is reported (and wins over a lexical error later in the line), exactly like before
+                error_log.log(Error(ParseErr::InstructionTooLong, line_no, end_col));
+                return;
             }
         }
 
-        if (cur_ch == '\n') {
-            if (cur_state != State::Err && cur_inst.used_size != 0) {
-                pipeline.push_back(std::move(cur_inst));
-            }
-            cur_inst = instruction_mod::Inst(); //reset current instruction
-            ++line_count;
-            col_count = 1;
-            cur_state = State::Nil;
-            prev_state = State::Nil;
-        } else {
-            ++col_count;
+        if (lexed.error.has_value()) { //the tokens before a lexical error are thrown away
+            error_log.log(*lexed.error);
+            return;
         }
 
-        prev_state = cur_state;
+        if (inst.used_size != 0) {
+            pipeline.push_back(std::move(inst));
+        }
 
-        if (pending_error) return std::unexpected(*pending_error);
-
-        return {};
-    }
-
-    //helper
-    std::unexpected<Error> Parser::parse_error(ParseErr err) {
-        return std::unexpected<Error>(Error(err, line_count, col_count));
     }
 
 }

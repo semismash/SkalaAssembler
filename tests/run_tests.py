@@ -2,6 +2,7 @@
 """Test suite for the Skala assembler (v1 and v1.1). Python standard library only.
 
     python tests/run_tests.py --exe path/to/main.exe            run everything
+    python tests/run_tests.py --exe path/to/main.exe --cli      assembler built with command-line arguments (skala-v1.1)
     python tests/run_tests.py --exe ... --record                (re)record the golden snapshots
     python tests/run_tests.py --exe ... --only 'known/*'        run matching tests only
     python tests/run_tests.py --exe ... --fuzz 1000 --seed 7    more fuzzing, other seed
@@ -18,6 +19,8 @@ import random
 import re
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -137,6 +140,41 @@ def preflight(t):
     return "\n".join(msg)
 
 
+class CliTarget:
+    """Runs `exe <input> -o <output>` in a temporary folder. For the assembler with command-line
+    arguments (skala-v1.1), so no hardcoded paths are involved."""
+
+    def __init__(self, exe, timeout=10):
+        self.exe, self.timeout = Path(exe).resolve(), timeout
+        self.root = None
+
+    def __enter__(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.src, self.out = self.tmp / "input.skasm", self.tmp / "out.bin"
+        return self
+
+    def __exit__(self, *exc):
+        self._tmp.cleanup()
+
+    def run_args(self, args, timeout=None):
+        if self.out.exists():
+            self.out.unlink()
+        try:
+            p = subprocess.run([str(self.exe)] + [str(a) for a in args], cwd=str(self.tmp), stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout or self.timeout)
+            rc, out, err, timed_out = p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace"), False
+        except subprocess.TimeoutExpired:
+            rc, out, err, timed_out = None, "", "", True
+        binary = self.out.read_bytes() if self.out.exists() else None
+        return RunResult(rc, out, err, binary, timed_out)
+
+    def run(self, source):
+        data = source if isinstance(source, bytes) else source.encode("utf-8")
+        self.src.write_bytes(data)
+        return self.run_args([self.src, "-o", self.out])
+
+
 # ------------------------------------------------------------------------------------------------
 class Report:
     def __init__(self, verbose):
@@ -230,6 +268,14 @@ def check_programs(t, rep, sel):
         rep.add(name, res.accepted and res.binary == want, detail)
 
 
+def col_matches(want_col, got_col):
+    """want_col is an int, a (lo, hi) range, or None (any column)."""
+    if want_col is None:
+        return True
+    lo, hi = want_col if isinstance(want_col, tuple) else (want_col, want_col)
+    return lo <= got_col <= hi
+
+
 def error_matches(got, want, ordered):
     """Compare reported errors with expectations. Returns (ok, explanation)."""
     if len(got) != len(want):
@@ -239,7 +285,7 @@ def error_matches(got, want, ordered):
         remaining = list(want)
         pairs = []
         for g in got:
-            hit = next((w for w in remaining if w[0] == g[0] and (w[1] is None or w[1] == g[1])), None)
+            hit = next((w for w in remaining if w[0] == g[0] and col_matches(w[1], g[1])), None)
             hit = hit or (remaining[0] if remaining else None)
             if hit in remaining:
                 remaining.remove(hit)
@@ -321,6 +367,58 @@ def check_golden(t, rep, sel, record):
         diff = "".join(difflib.unified_diff(old.splitlines(True), snap.splitlines(True), "recorded", "now", n=0))
         rep.add(test, old == snap, diff)
     return True
+
+
+def check_cli(t, rep, sel):
+    """Command-line behavior (CliTarget only)."""
+    if not isinstance(t, CliTarget):
+        return
+    good = "SET R1 #5\nEND\n"
+    t.src.write_text(good)
+    want = (MAGIC + bytes.fromhex("30100005bf000000"))
+
+    def add(name, ok, detail=""):
+        if sel(f"cli/{name}"):
+            rep.add(f"cli/{name}", ok, detail)
+
+    r = t.run_args([t.tmp / "missing.skasm", "-o", t.out])
+    add("missing_input_file", r.rc == 2 and "File not found" in r.stdout and "missing.skasm" in r.stdout, f"exit code {r.rc}\n{r.stdout[:200]}")
+    r = t.run_args([t.src, "--bogus"])
+    add("unknown_option", r.rc == 2 and "unknown option" in r.stderr, f"exit code {r.rc}\n{r.stderr[:200]}")
+    r = t.run_args([t.src, "-o"])
+    add("missing_output_name", r.rc == 2 and "needs a file name" in r.stderr, f"exit code {r.rc}\n{r.stderr[:200]}")
+    r = t.run_args([t.src, t.src])
+    add("two_input_files", r.rc == 2 and "more than one input" in r.stderr, f"exit code {r.rc}\n{r.stderr[:200]}")
+    r = t.run_args(["-o", t.out])
+    add("no_input_file", r.rc == 2 and "no input file" in r.stderr, f"exit code {r.rc}\n{r.stderr[:200]}")
+    r = t.run_args(["--help"])
+    add("help", r.rc == 0 and "Usage" in r.stdout, f"exit code {r.rc}\n{r.stdout[:200]}")
+    r = t.run_args([t.src, "-o", t.tmp / "custom.bin"])
+    add("output_path_honored", r.rc == 0 and (t.tmp / "custom.bin").exists() and (t.tmp / "custom.bin").read_bytes() == want,
+        f"exit code {r.rc}, custom.bin exists: {(t.tmp / 'custom.bin').exists()}")
+    default_out = t.src.with_suffix(".bin")
+    if default_out.exists():
+        default_out.unlink()
+    r = t.run_args([t.src])
+    add("default_output_name", r.rc == 0 and default_out.exists() and default_out.read_bytes() == want,
+        f"exit code {r.rc}, {default_out.name} exists: {default_out.exists()}")
+    r = t.run_args([t.src, "-o", t.tmp / "no_such_dir" / "out.bin"])
+    add("unwritable_output", r.rc == 2 and "could not open output file" in r.stdout, f"exit code {r.rc}\n{r.stdout[:300]}")
+    r = t.run_args([t.src, "-o", t.src])
+    add("output_would_overwrite_input", r.rc == 2 and "overwrite" in r.stderr and t.src.read_text() == good, f"exit code {r.rc}\n{r.stderr[:200]}")
+
+    # no key-press wait: stdin stays open and is never written to, the assembler must still finish
+    if sel("cli/no_keypress_wait"):
+        p = subprocess.Popen([str(t.exe), str(t.src), "-o", str(t.out)], cwd=str(t.tmp), stdin=subprocess.PIPE,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            p.wait(timeout=5)
+            ok, why = p.returncode == 0, f"exit code {p.returncode}"
+        except subprocess.TimeoutExpired:
+            p.kill(); ok, why = False, "still running after 5 seconds: it is waiting for a key press"
+        finally:
+            p.stdin.close()
+        rep.add("cli/no_keypress_wait", ok, why)
 
 
 # ---- differential fuzzing against the reference ---------------------------------------------
@@ -409,6 +507,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=str(HERE.parent), help="Skala repository root (default: parent of tests/)")
     ap.add_argument("--exe", help="assembler executable (default: <root>/main.exe or <root>/main)")
+    ap.add_argument("--cli", action="store_true", help="the assembler takes command-line arguments (skala-v1.1): no progs folder is used")
     ap.add_argument("--prog-name", help="input name used by the assembler (default: prog_name from assembler.hpp, else demo)")
     ap.add_argument("--no-preflight", action="store_true", help="skip the start-up check")
     ap.add_argument("--only", default="*", help="fnmatch pattern for test names")
@@ -426,8 +525,9 @@ def main():
     sel = lambda name: fnmatch.fnmatch(name, a.only)
 
     name = a.prog_name or detect_prog_name(root)
-    with Target(root, exe, source_name=name + ".skasm", bin_name=name + ".bin") as t:
-        print(f"assembler: {exe}\ninput:     {t.src}")
+    target = CliTarget(exe) if a.cli else Target(root, exe, source_name=name + ".skasm", bin_name=name + ".bin")
+    with target as t:
+        print(f"assembler: {exe}\ninput:     {t.src}" + ("  (command-line mode)" if a.cli else ""))
         if not a.no_preflight:
             problem = preflight(t)
             if problem:
@@ -442,6 +542,7 @@ def main():
         check_programs(t, rep, sel)
         check_errors(t, rep, sel)
         check_exit_codes(t, rep, sel)
+        check_cli(t, rep, sel)
         check_line_endings(t, rep, sel)
         check_fuzz(t, rep, sel, a.fuzz, a.seed)
         had_golden = check_golden(t, rep, sel, False)
